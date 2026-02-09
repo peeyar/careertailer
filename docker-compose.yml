@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # 1. The Database (Postgres)
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: careertailor_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  # 2. The Job Queue (Redis)
+  # We need this for the "Batch Triage" feature later
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  db_data:

@@ -1,0 +1,48 @@
+[project]
+name = "careertailer-api"
+version = "0.1.0"
+description = "career tailer apis"
+authors = [
+    {name = "Rajesh Kartha"}
+]
+package-mode = false
+requires-python = "^3.11"
+dependencies = [
+    "fastapi (>=0.128.0,<0.129.0)",
+    "uvicorn[standard] (>=0.40.0,<0.41.0)",
+    "python-multipart (>=0.0.21,<0.0.22)",
+    "langgraph (>=1.0.7,<2.0.0)",
+    "langchain (>=1.2.7,<2.0.0)",
+    "langchain-google-genai (>=4.2.0,<5.0.0)",
+    "langchain-community (>=0.4.1,<0.5.0)",
+    "supabase (>=2.27.2,<3.0.0)",
+    "python-docx (>=1.2.0,<2.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "pydantic (>=2.12.5,<3.0.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "asyncpg (>=0.31.0,<0.32.0)",
+    "sqlalchemy (>=2.0.46,<3.0.0)",
+    "psycopg2-binary (>=2.9.11,<3.0.0)",
+    "greenlet (>=3.3.1,<4.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "beautifulsoup4 (>=4.14.3,<5.0.0)",
+    "google-generativeai (>=0.8.6,<0.9.0)",
+    "playwright (>=1.58.0,<2.0.0)",
+    "pypdf (>=6.6.2,<7.0.0)",
+    "langchain-core (>=1.2.7,<2.0.0)",
+    "deepeval (>=3.8.3,<4.0.0)",
+    "pytest (>=9.0.2,<10.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.2,<10.0.0)",
+    "pytest-asyncio (>=1.3.0,<2.0.0)",
+    "black (>=26.1.0,<27.0.0)",
+    "isort (>=7.0.0,<8.0.0)"
+]
