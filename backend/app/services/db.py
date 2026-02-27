@@ -13,19 +13,16 @@ class DatabaseService:
     Handles all interactions with Supabase (Postgres).
     """
     def __init__(self):
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_KEY")
+       # Must match the exact names in your .env file
+        supabase_url: str = os.getenv("SUPABASE_URL")
+        supabase_key: str = os.getenv("SUPABASE_KEY")
         
-        # If no keys, we operate in "Offline Mode" (client is None)
-        if not url or not key:
-            print("⚠️ Supabase credentials missing. Persistence will be disabled.")
+        if not supabase_url or not supabase_key:
+            print("⚠️ WARNING: Supabase keys not found in environment!")
             self.client = None
         else:
-            try:
-                self.client: Client = create_client(url, key)
-            except Exception as e:
-                print(f"❌ Supabase Connection Failed: {e}")
-                self.client = None
+            self.client: Client = create_client(supabase_url, supabase_key)
+            print("✅ Supabase client initialized successfully")
 
     async def save_scrape(self, url: str, text: str):
         """Saves a raw job description to the 'job_scrapes' table."""
@@ -56,3 +53,16 @@ class DatabaseService:
             print("💾 DB: Analysis session saved.")
         except Exception as e:
             print(f"❌ DB Error (Save Analysis): {e}")
+    
+    async def get_history(self):
+        """Fetches the 10 most recent analysis sessions."""
+        if not self.client: 
+            return []
+        
+        try:
+            # Select all columns, order by newest first, limit to 10
+            response = self.client.table("analysis_sessions").select("*").order("created_at", desc=True).limit(10).execute()
+            return response.data
+        except Exception as e:
+            print(f"❌ DB Error (Get History): {e}")
+            return []        

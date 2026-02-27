@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
+from app.services.db import DatabaseService # Put this at the top with other imports if it isn't there
 from fastapi.middleware.cors import CORSMiddleware
 from app.dependencies import get_orchestrator
 from app.orchestrator import CareerOrchestrator
@@ -21,6 +22,16 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {"message": "CareerTailor Enterprise API is online 🚀"}
+
+@app.get("/api/history")
+async def get_analysis_history():
+    """Endpoint to retrieve past job matches."""
+    try:
+        db = DatabaseService()
+        history_data = await db.get_history()
+        return {"status": "success", "data": history_data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.post("/api/analyze", response_model=AnalysisResult)
 async def analyze_match(
