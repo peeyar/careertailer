@@ -37,3 +37,61 @@ class ICareerAI(ABC):
         Must return a strict AnalysisResult object.
         """
         pass
+
+
+class IEmbeddingService(ABC):
+    """
+    Provider-agnostic contract for text embedding.
+
+    Any embedding provider (Gemini, OpenAI, Voyage, etc.) must implement
+    these methods. The rest of the app only ever imports this interface —
+    never a concrete provider class.
+
+    Switching providers = change EMBEDDING_PROVIDER in .env. That's it.
+
+    ⚠️  When switching providers, vector dimensions may change.
+    You must re-run the SQL schema with the new vector(N) size and
+    re-ingest all master resumes. Existing embeddings will be incompatible.
+    """
+
+    @abstractmethod
+    async def embed_chunks(self, chunks: List[str]) -> List[List[float]]:
+        """
+        Embed a list of text chunks for storage (RETRIEVAL_DOCUMENT mode).
+        Returns a list of float vectors, one per chunk.
+        """
+        pass
+
+    @abstractmethod
+    async def embed_query(self, query: str) -> List[float]:
+        """
+        Embed a single query string for similarity search (RETRIEVAL_QUERY mode).
+        Returns a single float vector.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def dimensions(self) -> int:
+        """
+        Number of dimensions this provider outputs.
+        Must match the vector(N) column in the pgvector schema.
+        """
+        pass
+
+    @staticmethod
+    def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+        """
+        Shared chunking logic — identical for all providers.
+        Lives on the interface so it's never duplicated across implementations.
+        """
+        chunks = []
+        start = 0
+        text = text.strip()
+        while start < len(text):
+            chunk = text[start: start + chunk_size].strip()
+            if chunk:
+                chunks.append(chunk)
+            start += chunk_size - overlap
+        print(f"📄 Chunker: {len(text)} chars → {len(chunks)} chunks")
+        return chunks
