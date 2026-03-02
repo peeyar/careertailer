@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { UploadCloud, FileText, CheckCircle, AlertCircle, BookOpen, Loader2, LogOut, Clock, XCircle, ExternalLink } from 'lucide-react'
-import HistorySidebar from './components/HistorySidebar'
+import { UploadCloud, FileText, CheckCircle, AlertCircle, BookOpen, Loader2, LogOut, Clock, XCircle, ExternalLink, Download, Edit } from 'lucide-react'
+import HistorySidebar, { type HistoryItem } from './components/HistorySidebar'
+import CoverLetterCard from './components/CoverLetterCard'
 import AuthPage from './AuthPage'
 import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
@@ -13,6 +14,9 @@ interface AnalysisResult {
   missing_keywords:  string[]
   matching_keywords: string[]
   summary_reasoning: string
+  docx_path?:        string | null
+  changes_summary?:  string[]
+  cover_letter?:     string
 }
 
 type IngestStatus = 'idle' | 'loading' | 'success' | 'skipped' | 'error'
@@ -35,11 +39,16 @@ function App() {
   const [jobUrl, setJobUrl]               = useState('')
   const [file, setFile]                   = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting]   = useState(false)
-  const [, setCurrentJobId]   = useState<string | null>(null)
+  const [currentJobId, setCurrentJobId]   = useState<string | null>(null)
   const [jobStatus, setJobStatus]         = useState<JobStatus>(null)
   const [result, setResult]               = useState<AnalysisResult | null>(null)
   const [jobError, setJobError]           = useState('')
   const [refreshSidebar, setRefreshSidebar] = useState(0)
+  const [isGenerating, setIsGenerating]   = useState(false)
+  const [docxReady, setDocxReady]                 = useState(false)
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
+  const [isGeneratingCL, setIsGeneratingCL]       = useState(false)
+  const [coverLetterError, setCoverLetterError]   = useState('')
 
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> & { _fallback?: ReturnType<typeof setInterval> } | null>(null)
 
@@ -104,7 +113,9 @@ function App() {
     if (job.status === 'done') {
       console.log('✅ Job done, setting result:', job.result)
       stopListening()
-      setResult(job.result as AnalysisResult)
+      const analysisResult = job.result as AnalysisResult
+      setResult(analysisResult)
+      setDocxReady(!!analysisResult?.docx_path)
       setRefreshSidebar(prev => prev + 1)
     } else if (job.status === 'failed') {
       stopListening()
@@ -157,6 +168,21 @@ function App() {
   useEffect(() => () => stopListening(), [])  // cleanup on unmount
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleHistorySelect = (item: HistoryItem) => {
+    if (!item.result) return
+    stopListening()
+    setResult(item.result as AnalysisResult)
+    setCurrentJobId(item.id)
+    setJobUrl(item.job_url)
+    setJobStatus('done')
+    setDocxReady(!!item.result.docx_path)
+    setJobError('')
+    setSelectedHistoryId(item.id)
+    setIsGeneratingCL(false)
+    setCoverLetterError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
@@ -190,6 +216,11 @@ function App() {
     setJobError('')
     setJobStatus(null)
     setCurrentJobId(null)
+    setDocxReady(false)
+    setIsGenerating(false)
+    setSelectedHistoryId(null)
+    setIsGeneratingCL(false)
+    setCoverLetterError('')
 
     const formData = new FormData()
     if (file) formData.append('resume', file)  // optional if master resume exists
@@ -210,6 +241,43 @@ function App() {
       }
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleDownload = async () => {
+    if (!currentJobId) return
+    setIsGenerating(true)
+    try {
+      const response = await axios.get(`${API_BASE}/api/resume/${currentJobId}`, {
+        responseType: 'blob',
+      })
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', 'tailored_resume.docx')
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download failed:', err)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const handleGenerateCoverLetter = async () => {
+    if (!currentJobId) return
+    setIsGeneratingCL(true)
+    setCoverLetterError('')
+    try {
+      const response = await axios.post(`${API_BASE}/api/cover-letter/${currentJobId}`)
+      setResult(prev => prev ? { ...prev, cover_letter: response.data.cover_letter } : prev)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } } }
+      setCoverLetterError(error.response?.data?.detail || 'Cover letter generation failed.')
+    } finally {
+      setIsGeneratingCL(false)
     }
   }
 
@@ -471,18 +539,71 @@ function App() {
                 </div>
               </div>
 
-              {/* Apply CTA — after user has read the full analysis */}
+              {/* Tailoring summary */}
+              {docxReady && (result.changes_summary?.length ?? 0) > 0 && (
+                <div className="mt-6 bg-indigo-50 p-4 rounded-lg border border-indigo-100 text-indigo-900">
+                  <h4 className="font-bold flex items-center gap-2 mb-2">
+                    <Edit className="w-4 h-4" /> What Was Tailored
+                  </h4>
+                  <ul className="list-disc pl-5 text-sm space-y-1 text-indigo-800">
+                    {result.changes_summary!.map((change, i) => (
+                      <li key={i}>{change}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Cover Letter */}
+              <div className="mt-6">
+                {result.cover_letter && result.cover_letter.length > 0 ? (
+                  <CoverLetterCard coverLetter={result.cover_letter} />
+                ) : (
+                  <div className="flex flex-col items-start gap-2">
+                    <button
+                      onClick={handleGenerateCoverLetter}
+                      disabled={isGeneratingCL}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition"
+                    >
+                      {isGeneratingCL
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating cover letter...</>
+                        : <><FileText className="w-4 h-4" /> Generate Cover Letter</>}
+                    </button>
+                    {coverLetterError && (
+                      <p className="text-xs text-red-600">{coverLetterError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Download + Apply CTAs */}
               <div className="mt-6 pt-6 border-t border-gray-100">
-                <a
-                  href={jobUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-lg rounded-xl transition shadow-md"
-                >
-                  <ExternalLink className="w-5 h-5" />
-                  Apply for this Job
-                </a>
-                <p className="text-center text-xs text-gray-400 mt-2">Opens the job posting in a new tab</p>
+                <div className="flex gap-3">
+                  {docxReady ? (
+                    <button
+                      onClick={handleDownload}
+                      disabled={isGenerating}
+                      className="flex-1 flex items-center justify-center gap-2 py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-lg rounded-xl transition shadow-md"
+                    >
+                      {isGenerating
+                        ? <><Loader2 className="w-5 h-5 animate-spin" /> Downloading...</>
+                        : <><Download className="w-5 h-5" /> Download Tailored Resume</>}
+                    </button>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center py-4 text-sm text-gray-400">
+                      Resume generation failed — analysis results still available
+                    </div>
+                  )}
+                  <a
+                    href={jobUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-lg rounded-xl transition shadow-md"
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                    Apply for this Job
+                  </a>
+                </div>
+                <p className="text-center text-xs text-gray-400 mt-2">Apply link opens the job posting in a new tab</p>
               </div>
 
             </div>
@@ -490,7 +611,7 @@ function App() {
         </main>
       </div>
 
-      <HistorySidebar refreshTrigger={refreshSidebar} />
+      <HistorySidebar refreshTrigger={refreshSidebar} onSelect={handleHistorySelect} selectedId={selectedHistoryId} />
     </div>
   )
 }

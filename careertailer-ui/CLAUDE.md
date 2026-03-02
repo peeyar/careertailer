@@ -59,3 +59,54 @@ VITE_SUPABASE_ANON_KEY   # publishable key — safe for frontend
 
 Phase 5 — download button + docx generation UI  
 See FRONTEND_README.md for full pending list and parking lot items
+
+## Phase 5 — Resume Download UI Spec
+
+### New state in App.tsx
+
+```typescript
+const [isGenerating, setIsGenerating] = useState(false)
+const [docxReady, setDocxReady]       = useState(false)
+```
+
+### When results arrive (job.status === 'done')
+
+Check `job.result.docx_path` — if truthy, set `docxReady(true)`.
+
+### Download button
+
+Replaces the current "Apply for this Job" layout at the bottom of results.
+Show BOTH buttons side by side:
+
+```
+[ ⬇ Download Tailored Resume ]    [ Apply for this Job ↗ ]
+```
+
+Download button behavior:
+- onClick: GET /api/resume/{job_id} with Authorization header
+- Use axios with responseType: 'blob'
+- Create object URL, trigger anchor click, revoke URL
+- Show spinner while downloading (isGenerating state)
+- If docx_path is null/missing: show "Resume generation failed" in gray, Apply button still works
+
+### axios blob download pattern
+
+```typescript
+const response = await axios.get(`${API_BASE}/api/resume/${currentJobId}`, {
+  responseType: 'blob'
+})
+const url = window.URL.createObjectURL(new Blob([response.data]))
+const link = document.createElement('a')
+link.href = url
+link.setAttribute('download', 'tailored_resume.docx')
+document.body.appendChild(link)
+link.click()
+link.remove()
+window.URL.revokeObjectURL(url)
+```
+
+### Do not
+
+- Do not show the download button until job.status === 'done'
+- Do not disable the Apply button if docx generation failed
+- Do not use window.open for the download — must use blob pattern above for auth headers

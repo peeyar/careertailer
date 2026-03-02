@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 from supabase import create_client, Client
 from app.core.interfaces import AnalysisResult
 from dotenv import load_dotenv
@@ -44,6 +44,25 @@ class DatabaseService:
             print("💾 DB: Job scrape saved.")
         except Exception as e:
             print(f"❌ DB Error (Save Scrape): {e}")
+
+    async def get_job_scrape(self, url: str) -> Optional[str]:
+        """Fetches the raw scraped job text for a given URL."""
+        if not self.service_client:
+            return None
+        try:
+            response = (
+                self.service_client.table("job_scrapes")
+                .select("raw_text")
+                .eq("url", url)
+                .limit(1)
+                .execute()
+            )
+            if response.data:
+                return response.data[0]["raw_text"]
+            return None
+        except Exception as e:
+            print(f"❌ DB Error (Get Scrape): {e}")
+            return None
 
     async def save_analysis(self, job_url: str, result: AnalysisResult):
         """Saves the final analysis to 'analysis_sessions'."""
@@ -168,6 +187,93 @@ class DatabaseService:
         except Exception as e:
             print(f"❌ DB Error (Save Chunks): {e}")
             raise  # Re-raise so the endpoint returns a 500
+
+    async def get_all_resume_chunks(self, user_id: str) -> List[str]:
+        """
+        Fetches ALL stored resume chunks for a user, ordered by chunk_index.
+        Used by the writer node to give Gemini the complete resume for tailoring,
+        not just the top-k similarity matches used for analysis.
+        """
+        if not self.service_client:
+            return []
+        try:
+            response = (
+                self.service_client.table("resume_chunks")
+                .select("chunk_text, chunk_index")
+                .eq("user_id", user_id)
+                .order("chunk_index")
+                .execute()
+            )
+            return [row["chunk_text"] for row in (response.data or [])]
+        except Exception as e:
+            print(f"❌ DB Error (Get All Chunks): {e}")
+            return []
+
+    # ── Phase 5+: Style Storage ───────────────────────────────────────────────
+
+    # ── Phase 6: Supabase Storage ─────────────────────────────────────────────
+
+    async def upload_resume(self, user_id: str, job_id: str, docx_bytes: bytes) -> Optional[str]:
+        """Upload .docx bytes to Supabase Storage. Returns storage path or None on failure."""
+        if not self.service_client:
+            return None
+        storage_path = f"{user_id}/{job_id}.docx"
+        try:
+            self.service_client.storage.from_("resumes").upload(
+                path=storage_path,
+                file=docx_bytes,
+                file_options={
+                    "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "upsert": "true",
+                },
+            )
+            print(f"☁️  Storage: Resume uploaded to {storage_path}")
+            return storage_path
+        except Exception as e:
+            print(f"❌ Storage Error (Upload): {e}")
+            return None
+
+    async def download_resume(self, storage_path: str) -> Optional[bytes]:
+        """Download .docx bytes from Supabase Storage. Returns bytes or None on failure."""
+        if not self.service_client:
+            return None
+        try:
+            return self.service_client.storage.from_("resumes").download(storage_path)
+        except Exception as e:
+            print(f"❌ Storage Error (Download): {e}")
+            return None
+
+    async def save_resume_style(self, user_id: str, style: dict):
+        """Upsert the extracted resume style into resume_styles table."""
+        if not self.service_client:
+            return
+        try:
+            self.service_client.table("resume_styles").upsert(
+                {"user_id": user_id, "style": style},
+                on_conflict="user_id",
+            ).execute()
+            print(f"💾 DB: Resume style saved for user {user_id}")
+        except Exception as e:
+            print(f"❌ DB Error (Save Style): {e}")
+
+    async def get_resume_style(self, user_id: str) -> Optional[dict]:
+        """Fetch the stored resume style for a user, or None if not found."""
+        if not self.service_client:
+            return None
+        try:
+            response = (
+                self.service_client.table("resume_styles")
+                .select("style")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if response.data:
+                return response.data[0]["style"]
+            return None
+        except Exception as e:
+            print(f"❌ DB Error (Get Style): {e}")
+            return None
 
     async def search_similar_chunks(
         self,

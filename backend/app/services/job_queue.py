@@ -60,10 +60,12 @@ class JobQueueService:
 
     async def update_status(
         self,
-        job_id:  str,
-        status:  str,
-        result:  Optional[AnalysisResult] = None,
-        error:   Optional[str] = None,
+        job_id:          str,
+        status:          str,
+        result:          Optional[AnalysisResult] = None,
+        error:           Optional[str] = None,
+        docx_path:       Optional[str] = None,
+        changes_summary: Optional[list] = None,
     ):
         """Updates job status. Uses service key — runs in background worker."""
         client = _service_client()
@@ -75,6 +77,8 @@ class JobQueueService:
                 "missing_keywords":  result.missing_keywords,
                 "matching_keywords": result.matching_keywords,
                 "summary_reasoning": result.summary_reasoning,
+                "docx_path":         docx_path,
+                "changes_summary":   changes_summary or [],
             }
         if error:
             payload["error_message"] = error
@@ -110,3 +114,20 @@ class JobQueueService:
             .execute()
         )
         return response.data or []
+
+    async def patch_cover_letter(self, job_id: str, cover_letter: str):
+        """Merges cover_letter into the existing result JSONB for a completed job."""
+        client = _service_client()
+        response = (
+            client.table("analysis_jobs")
+            .select("result")
+            .eq("id", job_id)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
+            return
+        existing = response.data[0].get("result") or {}
+        existing["cover_letter"] = cover_letter
+        client.table("analysis_jobs").update({"result": existing}).eq("id", job_id).execute()
+        print(f"✉️  Queue: Cover letter cached for job {job_id}")
