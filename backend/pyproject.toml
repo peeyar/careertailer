@@ -34,7 +34,9 @@ dependencies = [
     "pytest (>=9.0.2,<10.0.0)",
     "python-jose[cryptography] (>=3.5.0,<4.0.0)",
     "slowapi (>=0.1.9,<0.2.0)",
-    "pdfplumber (>=0.11.9,<0.12.0)"
+    "pdfplumber (>=0.11.9,<0.12.0)",
+    "fpdf2 (>=2.8.7,<3.0.0)",
+    "mcp (>=1.0,<2.0)"
 ]
 
 

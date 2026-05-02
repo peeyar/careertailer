@@ -209,6 +209,28 @@ class DatabaseService:
             print(f"❌ DB Error (Get All Chunks): {e}")
             return []
 
+    async def get_full_resume_text(self, user_id: str) -> str:
+        """Return the user's full master resume text, concatenated from chunks
+        ordered by chunk_index. Returns empty string if the user has no resume
+        ingested.
+        """
+        if not self.service_client:
+            return ""
+        try:
+            response = (
+                self.service_client.table("resume_chunks")
+                .select("chunk_text, chunk_index")
+                .eq("user_id", user_id)
+                .order("chunk_index")
+                .execute()
+            )
+            if not response.data:
+                return ""
+            return "\n".join(row["chunk_text"] for row in response.data)
+        except Exception as e:
+            print(f"❌ DB Error (Get Full Resume Text): {e}")
+            return ""
+
     # ── Phase 5+: Style Storage ───────────────────────────────────────────────
 
     # ── Phase 6: Supabase Storage ─────────────────────────────────────────────
