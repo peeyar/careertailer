@@ -16,8 +16,21 @@ from pydantic import BaseModel, Field
 
 from app.services.llm import CareerAI
 from app.services.db import DatabaseService
+from phoenix.otel import register
+from opentelemetry import trace
 
 load_dotenv()
+
+# Phoenix observability — same project as JobScout v5 for unified traces.
+# The shared project_name is what makes Phoenix join the JobScout-side and
+# CareerTailor-side spans into a single distributed trace tree.
+tracer_provider = register(
+    project_name="jobscout-v5",
+    endpoint="http://localhost:6006/v1/traces",
+    auto_instrument=True,
+)
+
+tracer = trace.get_tracer("careertailer.mcp_server")
 
 # Module-level singletons. Created once at server startup.
 _career_ai: CareerAI | None = None
@@ -94,28 +107,34 @@ async def analyze_job_fit(input: AnalyzeJobFitInput) -> AnalyzeJobFitOutput:
     The user_id is required because each user has their own ingested resume
     stored in the resume_chunks table.
     """
-    db = get_db_service()
-    ai = get_career_ai()
+    with tracer.start_as_current_span("careertailer.analyze_job_fit") as span:
+        span.set_attribute("user_id", input.user_id)
+        span.set_attribute("job_description.length", len(input.job_description))
 
-    resume_text = await db.get_full_resume_text(input.user_id)
+        db = get_db_service()
+        ai = get_career_ai()
 
-    if not resume_text:
-        raise ValueError(
-            f"No master resume found for user_id={input.user_id}. "
-            "User must ingest their resume before analyze_job_fit can run."
+        resume_text = await db.get_full_resume_text(input.user_id)
+
+        if not resume_text:
+            raise ValueError(
+                f"No master resume found for user_id={input.user_id}. "
+                "User must ingest their resume before analyze_job_fit can run."
+            )
+
+        result = await ai.analyze_match(
+            resume_text=resume_text,
+            job_text=input.job_description,
         )
 
-    result = await ai.analyze_match(
-        resume_text=resume_text,
-        job_text=input.job_description,
-    )
+        span.set_attribute("match_score", result.match_score)
 
-    return AnalyzeJobFitOutput(
-        match_score=result.match_score,
-        matching_keywords=result.matching_keywords,
-        missing_keywords=result.missing_keywords,
-        summary_reasoning=result.summary_reasoning,
-    )
+        return AnalyzeJobFitOutput(
+            match_score=result.match_score,
+            matching_keywords=result.matching_keywords,
+            missing_keywords=result.missing_keywords,
+            summary_reasoning=result.summary_reasoning,
+        )
 
 
 # ============================================================================
@@ -126,4 +145,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("CAREERTAILER_MCP_PORT", 8765))
     print(f"Starting CareerTailor MCP server on port {port}...")
     print(f"Endpoint: http://localhost:{port}/mcp")
+
+
+
     mcp.run(transport="streamable-http")

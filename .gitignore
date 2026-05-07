@@ -8,3 +8,7 @@ coverage/
 **/*.pyc
 **/*.pyo
 **/.DS_Store
+**/SPEC*.md
+**/SPEC*.MD
+LLM_CONTEXT.md
+STATUS.md
